@@ -1,0 +1,332 @@
+const IS_VIRTUAL_ELEMENT = Symbol("is_virtual_element");
+const IS_ASYNC = Symbol("is_async");
+
+/** @type {Map<Symbol, any>} */
+const contextCache = new Map();
+
+/** @type {Map<string, any>} */
+const RealDOMCache = new Map();
+
+/** @type {Map<string, any>} */
+const DOMCache = new Map();
+
+/** @type {Record<string, HTMLElement>} */
+const RealDOM = new Proxy({}, {
+    get(_, tag) {
+        if (typeof tag !== 'string') throw new Error("tag is not a string");
+
+        let cache = RealDOMCache.get(tag);
+
+        if (!cache) {
+            cache = function (vnode) {
+                if (!vnode[IS_VIRTUAL_ELEMENT]) {
+                    console.log({ vnode })
+                    throw new Error("vnode is not a \"IS_VIRTUAL_ELEMENT\"");
+                }
+
+                const element = document.createElement(tag);
+
+                if (vnode.textContent) {
+                    element.textContent = vnode.textContent;
+                }
+
+                if (vnode.attributes) {
+                    for (const key in vnode.attributes) {
+                        if (key.startsWith("on") && typeof vnode.attributes[key] === 'function') {
+                            element[key] = vnode.attributes[key];
+                        } else {
+                            element.setAttribute(key, vnode.attributes[key]);
+                        }
+                    }
+                }
+
+                if (Array.isArray(vnode.children)) {
+                    for (const child of vnode.children) {
+                        if (!child) continue;
+                        element.append(render(child, element));
+                    }
+                }
+
+                vnode.DOM = element;
+                return element;
+            }
+
+            RealDOMCache.set(tag, cache);
+        }
+
+        return cache;
+    }
+});
+
+/** @typedef {{ tag:string, textContent: string | null, attributes: Record<string, any>, children: vNode[], [IS_VIRTUAL_ELEMENT]: boolean, }} vNode */
+
+/** @typedef {(text:string | Record<string, any> | any[], attribute:Record<string, any> | any[], children:any[]) => vNode} vElement */
+/** @typedef {{ (import_url:string, fallback:(props:Record<string, any>) => vNode) => vNode, async : () => Promise<() => vNode>, [IS_ASYNC] : boolean }} vLazy */
+/** @typedef {(props:Record<string, any>) => vNode} vComponent */
+/** @typedef {(context:Symbol, props:any, child:vNode) => vNode} vProvider */
+
+/** @type {{ [x:string] : vElement, lazy : vLazy, component : vComponent, provider : vProvider }} */
+export const DOM = new Proxy({}, {
+    get(_, tag) {
+        if (typeof tag !== 'string') throw new Error("tag is not a string");
+
+        let cache = DOMCache.get(tag);
+
+        if (!cache) {
+            cache = tag === "provider" ? function (context, props, child) {
+                contextCache.set(context, props);
+                return child;
+            } : tag === "lazy" ? function (import_url, fallback, props) {
+                const node = () => fallback(props);
+                node.async = async () => {
+                    const component = await import(import_url);
+                    if (!component.default || typeof component.default !== "function") throw new Error("component is not a function");
+                    return () => component.default(props);
+                };
+                node[IS_ASYNC] = true;
+                return node;
+            } : tag === "component" ? function (component, props = {}) {
+                return () => component(props);
+            } : function (...args) {
+                let text, attributes, children;
+
+                if (typeof args[0] === "string") text = args[0];
+                if (typeof args[0] === "object" && !Array.isArray(args[0])) attributes = args[0];
+                if (typeof args[1] === "object" && !Array.isArray(args[1])) attributes = args[1];
+
+                if (Array.isArray(args[0])) children = args[0];
+                if (Array.isArray(args[1])) children = args[1];
+                if (Array.isArray(args[2])) children = args[2];
+
+                return {
+                    tag,
+                    textContent: text || null,
+                    attributes: attributes || {},
+                    children: children || [],
+                    [IS_VIRTUAL_ELEMENT]: true,
+                };
+            };
+
+            DOMCache.set(tag, cache);
+        }
+
+        return cache;
+    }
+});
+
+let currentInstance = null;
+let useStateCounter = 0;
+let useEffectQueue = [];
+
+/**
+ * @param {string} value
+ */
+export function createContext(value) {
+    return Symbol(value || (Math.random() + 1).toString(36).substring(2))
+}
+
+/**
+ * @param {Symbol} key
+ */
+export function useContext(key) {
+    return contextCache.get(key);
+}
+
+export function useEffect(effectFn, deps) {
+    const instance = currentInstance;
+    const index = useStateCounter++;
+
+    const oldDeps = instance.effectDeps?.[index];
+    const hasChanged = !oldDeps || deps.some((d, i) => d !== oldDeps[i]);
+
+    if (hasChanged) {
+        useEffectQueue.push(() => {
+            if (typeof instance.cleanupFns?.[index] === 'function') {
+                instance.cleanupFns[index]();
+            }
+            const cleanup = effectFn();
+            if (!instance.cleanupFns) instance.cleanupFns = [];
+            instance.cleanupFns[index] = cleanup;
+        });
+    }
+
+    if (!instance.effectDeps) instance.effectDeps = [];
+    instance.effectDeps[index] = deps;
+}
+
+function runEffects() {
+    for (const effect of useEffectQueue) {
+        effect();
+    }
+    useEffectQueue = [];
+}
+
+export function useState(initial_value) {
+    if (!currentInstance) throw new Error("cannot instantiate \"useState\" outside of a component");
+
+    const instance = currentInstance;
+    const index = useStateCounter;
+    if (!instance.stateStack[index]) {
+        instance.stateStack[index] = initial_value;
+    }
+
+    const setValue = (new_value) => {
+        if (typeof new_value === "function") {
+            instance.stateStack[index] = new_value(instance.stateStack[index]);
+        } else {
+            instance.stateStack[index] = new_value;
+        }
+
+        useStateCounter = 0;
+        currentInstance = instance;
+        const newVNode = instance.component();
+        currentInstance = null;
+        diff(instance.parentDom, instance.vnode, newVNode);
+        instance.vnode = newVNode;
+
+        runEffects();
+    };
+
+    const value = instance.stateStack[index];
+    useStateCounter++;
+    return [value, setValue];
+}
+
+export function useMemo(factory, deps) {
+    if (!currentInstance) throw new Error("cannot use useMemo outside of a component");
+
+    const instance = currentInstance;
+    const index = useStateCounter++;
+
+    if (!instance.memoValues) instance.memoValues = [];
+    if (!instance.memoDeps) instance.memoDeps = [];
+
+    const oldDeps = instance.memoDeps[index];
+    const hasChanged = !oldDeps || deps.some((d, i) => d !== oldDeps[i]);
+
+    if (hasChanged) {
+        instance.memoValues[index] = factory();
+        instance.memoDeps[index] = deps;
+    }
+
+    return instance.memoValues[index];
+}
+
+function createComponentInstance(component, parentDom) {
+    return {
+        component,
+        memoValues: [],
+        memoDeps: [],
+        effectDeps: [],
+        cleanupFns: [],
+        parentDom,
+        vnode: null,
+        dom: null,
+        stateStack: [],
+    };
+}
+
+export function mount(component, options) {
+    const dom_tree = render(component, options.target);
+    options.target.appendChild(dom_tree);
+}
+
+function render(vnode, target = null) {
+    if (typeof vnode === "function") {
+        useStateCounter = 0;
+        const instance = createComponentInstance(vnode, target);
+        currentInstance = instance;
+        const result = vnode();
+        instance.vnode = result;
+        const dom = render(result, target);
+        instance.dom = dom;
+        currentInstance = null;
+        runEffects();
+        vnode._instance = instance;
+
+        if (vnode[IS_ASYNC]) {
+            const result = vnode.async();
+            const placeholder = dom;
+            instance.dom = placeholder;
+            result.then(resolvedVNode => {
+                currentInstance = instance;
+                instance.vnode = resolvedVNode;
+                const dom = render(resolvedVNode, target);
+                currentInstance = null;
+                runEffects();
+                vnode._instance = instance;
+                target.replaceChild(dom, placeholder);
+                instance.dom = dom;
+            });
+            currentInstance = null;
+            return placeholder;
+        }
+
+        return dom;
+    }
+
+    return RealDOM[vnode.tag](vnode);
+}
+
+function diff(parent, oldVNode, newVNode) {
+    if (typeof newVNode === "function" && oldVNode) {
+        useStateCounter = 0;
+        const instance = oldVNode?._instance || createComponentInstance(newVNode, parent);
+        currentInstance = instance;
+        const result = newVNode();
+        currentInstance = null;
+        diff(parent, instance.vnode, result);
+        runEffects();
+        newVNode._instance = instance;
+        return;
+    }
+
+    if (!oldVNode) {
+        parent.appendChild(render(newVNode, parent));
+        return;
+    }
+
+    if (!newVNode) {
+        parent.removeChild(oldVNode.DOM || oldVNode._instance.dom);
+        return;
+    }
+
+    if (oldVNode.tag !== newVNode.tag) {
+        const newEl = render(newVNode, parent);
+        parent.replaceChild(newEl, oldVNode.DOM || oldVNode._instance.dom);
+        return;
+    }
+
+    const el = oldVNode.DOM || oldVNode._instance.dom;
+    newVNode.DOM = el;
+
+    // Update text content
+    if (oldVNode.textContent !== newVNode.textContent) {
+        el.textContent = newVNode.textContent || "";
+    }
+
+    // Update attributes
+    const oldAttrs = new Set(Object.keys(oldVNode.attributes));
+    const newAttrs = new Set(Object.keys(newVNode.attributes));
+
+    for (const key in oldAttrs.difference(newAttrs)) {
+        el.removeAttribute(key);
+    }
+
+    for (const key of newAttrs) {
+        if (key.startsWith("on") && typeof newVNode.attributes[key] === 'function') {
+            el[key] = newVNode.attributes[key];
+        } else {
+            el.setAttribute(key, newVNode.attributes[key]);
+        }
+    }
+
+    // Diff children
+    const oldChildren = oldVNode.children || [];
+    const newChildren = newVNode.children || [];
+    const max = Math.max(oldChildren.length, newChildren.length);
+
+    for (let i = 0; i < max; i++) {
+        diff(el, oldChildren[i], newChildren[i]);
+    }
+}
