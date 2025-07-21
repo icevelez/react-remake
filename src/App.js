@@ -1,5 +1,7 @@
 import { DOM, useState } from "../react.js";
 
+import { Example } from "./Context.js";
+
 import Counter from "./Counter.js";
 import TextBind from "./TextBind.js";
 
@@ -8,7 +10,9 @@ export default function () {
 
     const [showPlayground, setShowPlayground] = useState(false);
 
-    return DOM.div([
+    return Example.Provider({
+        message: "hello from app"
+    }, DOM.div([
         DOM.component(Counter, { id: "example" }),
         DOM.br(),
         DOM.div([
@@ -20,5 +24,5 @@ export default function () {
         showPlayground ? DOM.lazy("/src/Playground.js", () => DOM.div([
             DOM.h1("Loading Playground")
         ])) : null,
-    ]);
+    ]));
 }

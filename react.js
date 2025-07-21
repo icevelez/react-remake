@@ -1,9 +1,6 @@
 const IS_VIRTUAL_ELEMENT = Symbol("is_virtual_element");
 const IS_ASYNC = Symbol("is_async");
 
-/** @type {Map<Symbol, any>} */
-const contextCache = new Map();
-
 /** @type {Map<string, any>} */
 const RealDOMCache = new Map();
 
@@ -20,7 +17,6 @@ const RealDOM = new Proxy({}, {
         if (!cache) {
             cache = function (vnode) {
                 if (!vnode[IS_VIRTUAL_ELEMENT]) {
-                    console.log({ vnode })
                     throw new Error("vnode is not a \"IS_VIRTUAL_ELEMENT\"");
                 }
 
@@ -73,10 +69,7 @@ export const DOM = new Proxy({}, {
         let cache = DOMCache.get(tag);
 
         if (!cache) {
-            cache = tag === "provider" ? function (context, props, child) {
-                contextCache.set(context, props);
-                return child;
-            } : tag === "lazy" ? function (import_url, fallback, props) {
+            cache = tag === "lazy" ? function (import_url, fallback, props) {
                 const node = () => fallback(props);
                 node.async = async () => {
                     const component = await import(import_url);
@@ -118,18 +111,33 @@ let currentInstance = null;
 let useStateCounter = 0;
 let useEffectQueue = [];
 
-/**
- * @param {string} value
- */
-export function createContext(value) {
-    return Symbol(value || (Math.random() + 1).toString(36).substring(2))
+export function createContext() {
+    const context = {
+        id: Symbol("context"),
+        /**
+         * @param {any} value
+         * @param {vNode} child
+         */
+        Provider: function (value, child) {
+            return {
+                id: this,
+                tag: "provider",
+                context: new Map(),
+                value,
+                child,
+                [IS_VIRTUAL_ELEMENT]: true,
+            };
+        }
+    };
+    return context;
 }
 
 /**
  * @param {Symbol} key
  */
-export function useContext(key) {
-    return contextCache.get(key);
+export function useContext(context) {
+    if (!currentInstance) throw new Error("useContext must be used in a component");
+    return currentInstance.contexts.get(context) ?? context.defaultValue;
 }
 
 export function useEffect(effectFn, deps) {
@@ -180,7 +188,6 @@ export function useState(initial_value) {
         useStateCounter = 0;
         currentInstance = instance;
         const newVNode = instance.component();
-        currentInstance = null;
         diff(instance.parentDom, instance.vnode, newVNode);
         instance.vnode = newVNode;
 
@@ -223,6 +230,7 @@ function createComponentInstance(component, parentDom) {
         vnode: null,
         dom: null,
         stateStack: [],
+        contexts: new Map(),
     };
 }
 
@@ -232,15 +240,20 @@ export function mount(component, options) {
 }
 
 function render(vnode, target = null) {
+    if (vnode.tag === 'provider') {
+        currentInstance.contexts.set(vnode.id, vnode.value);
+        return render(vnode.child, target);
+    }
+
     if (typeof vnode === "function") {
         useStateCounter = 0;
         const instance = createComponentInstance(vnode, target);
+        instance.contexts = currentInstance ? new Map(currentInstance.contexts) : new Map();
         currentInstance = instance;
         const result = vnode();
         instance.vnode = result;
         const dom = render(result, target);
         instance.dom = dom;
-        currentInstance = null;
         runEffects();
         vnode._instance = instance;
 
@@ -252,13 +265,11 @@ function render(vnode, target = null) {
                 currentInstance = instance;
                 instance.vnode = resolvedVNode;
                 const dom = render(resolvedVNode, target);
-                currentInstance = null;
                 runEffects();
                 vnode._instance = instance;
                 target.replaceChild(dom, placeholder);
                 instance.dom = dom;
             });
-            currentInstance = null;
             return placeholder;
         }
 
@@ -269,12 +280,17 @@ function render(vnode, target = null) {
 }
 
 function diff(parent, oldVNode, newVNode) {
+    if ((newVNode && newVNode.tag === "provider") || (oldVNode && oldVNode.tag === "provider")) {
+        diff(parent, oldVNode.child, newVNode.child);
+        return;
+    }
+
     if (typeof newVNode === "function" && oldVNode) {
         useStateCounter = 0;
         const instance = oldVNode?._instance || createComponentInstance(newVNode, parent);
+        instance.contexts = currentInstance ? new Map(currentInstance.contexts) : new Map();
         currentInstance = instance;
         const result = newVNode();
-        currentInstance = null;
         diff(parent, instance.vnode, result);
         runEffects();
         newVNode._instance = instance;

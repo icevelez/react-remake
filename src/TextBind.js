@@ -1,7 +1,11 @@
-import { DOM, useState, useEffect } from "../react.js";
+import { DOM, useState, useEffect, useContext } from "../react.js";
+import { Example } from "./Context.js";
 
 export default function () {
     console.log("render textbind");
+
+    const context = useContext(Example);
+    console.log("textbind context", context);
 
     const [message, setMessage] = useState("World!");
 
