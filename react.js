@@ -280,6 +280,10 @@ function render(vnode, target = null) {
 }
 
 function diff(parent, oldVNode, newVNode) {
+    if (!oldVNode && !newVNode) {
+        return;
+    }
+
     if ((newVNode && newVNode.tag === "provider") || (oldVNode && oldVNode.tag === "provider")) {
         diff(parent, oldVNode.child, newVNode.child);
         return;
@@ -290,10 +294,22 @@ function diff(parent, oldVNode, newVNode) {
         const instance = oldVNode?._instance || createComponentInstance(newVNode, parent);
         instance.contexts = currentInstance ? new Map(currentInstance.contexts) : new Map();
         currentInstance = instance;
+
+        if (newVNode[IS_ASYNC]) {
+            const result = newVNode.async();
+            result.then(resolvedVNode => {
+                diff(parent, instance.vnode, resolvedVNode);
+                runEffects();
+                newVNode._instance = instance;
+            });
+            return;
+        }
+
         const result = newVNode();
         diff(parent, instance.vnode, result);
         runEffects();
         newVNode._instance = instance;
+
         return;
     }
 

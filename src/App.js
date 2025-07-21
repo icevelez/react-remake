@@ -8,11 +8,18 @@ import TextBind from "./TextBind.js";
 export default function () {
     console.log("render app");
 
+    const [message, setMessage] = useState("Message From App");
     const [showPlayground, setShowPlayground] = useState(false);
 
-    return Example.Provider({
-        message: "hello from app"
-    }, DOM.div([
+    const contextValue = {
+        message,
+        setMessage,
+    };
+
+    return Example.Provider(contextValue, DOM.div([
+        DOM.div([
+            DOM.h1(message)
+        ]),
         DOM.component(Counter, { id: "example" }),
         DOM.br(),
         DOM.div([
