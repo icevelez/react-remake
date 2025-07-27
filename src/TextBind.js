@@ -1,12 +1,12 @@
-import { DOM, useState, useEffect, useContext } from "../react.js";
-import { Example } from "./Context.js";
+import { DOM } from "../react.js";
 
-export default function () {
+
+export default function (props) {
     console.log("render textbind");
 
-    const context = useContext(Example);
+    const context = props;
 
-    return DOM.div([
+    return DOM.div({ style: "border-style: solid; border-color: purple;" }, [
         DOM.h1("Hello " + context.message),
         DOM.div([
             DOM.label("Type message:"),

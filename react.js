@@ -20,6 +20,12 @@ const RealDOM = new Proxy({}, {
                     throw new Error("vnode is not a \"IS_VIRTUAL_ELEMENT\"");
                 }
 
+                if (tag === "comment") {
+                    const element = document.createComment(vnode.comment || "");
+                    vnode.DOM = element;
+                    return element;
+                }
+
                 const element = document.createElement(tag);
 
                 if (vnode.textContent) {
@@ -37,8 +43,15 @@ const RealDOM = new Proxy({}, {
                 }
 
                 if (Array.isArray(vnode.children)) {
-                    for (const child of vnode.children) {
-                        if (!child) continue;
+                    for (let i = 0; i < vnode.children.length; i++) {
+                        let child = vnode.children[i];
+
+                        if (!child) {
+                            child = vnode.children[i] = DOM.comment("empty");
+                            element.append(render(child, element));
+                            continue;
+                        }
+
                         element.append(render(child, element));
                     }
                 }
@@ -57,7 +70,7 @@ const RealDOM = new Proxy({}, {
 /** @typedef {{ tag:string, textContent: string | null, attributes: Record<string, any>, children: vNode[], [IS_VIRTUAL_ELEMENT]: boolean, }} vNode */
 
 /** @typedef {(text:string | Record<string, any> | any[], attribute:Record<string, any> | any[], children:any[]) => vNode} vElement */
-/** @typedef {{ (import_url:string, fallback:(props:Record<string, any>) => vNode) => vNode, async : () => Promise<() => vNode>, [IS_ASYNC] : boolean }} vLazy */
+/** @typedef {{ (import_url:string, fallback:(props:Record<string, any>) => vNode, props:Record<string, any>) => vNode, async : () => Promise<() => vNode>, [IS_ASYNC] : boolean }} vLazy */
 /** @typedef {(props:Record<string, any>) => vNode} vComponent */
 /** @typedef {(context:Symbol, props:any, child:vNode) => vNode} vProvider */
 
@@ -69,7 +82,14 @@ export const DOM = new Proxy({}, {
         let cache = DOMCache.get(tag);
 
         if (!cache) {
-            cache = tag === "lazy" ? function (import_url, fallback, props) {
+            cache = tag === "comment" ? function (comment = "") {
+                return {
+                    tag,
+                    comment,
+                    attributes: {},
+                    [IS_VIRTUAL_ELEMENT]: true,
+                }
+            } : tag === "lazy" ? function (import_url, fallback, props) {
                 const node = () => fallback(props);
                 node.async = async () => {
                     const component = await import(import_url);
@@ -298,7 +318,7 @@ function diff(parent, oldVNode, newVNode) {
         if (newVNode[IS_ASYNC]) {
             const result = newVNode.async();
             result.then(resolvedVNode => {
-                diff(parent, instance.vnode, resolvedVNode);
+                diff(parent, instance.vnode || oldVNode, resolvedVNode);
                 runEffects();
                 newVNode._instance = instance;
             });
@@ -306,15 +326,18 @@ function diff(parent, oldVNode, newVNode) {
         }
 
         const result = newVNode();
-        diff(parent, instance.vnode, result);
+        diff(parent, instance?.vnode || oldVNode, result);
         runEffects();
+        instance.vnode = result;
         newVNode._instance = instance;
-
+        newVNode._instance.dom = result.DOM;
         return;
     }
 
     if (!oldVNode) {
-        parent.appendChild(render(newVNode, parent));
+        const newEl = render(newVNode, parent);
+        newVNode.DOM = newEl;
+        parent.append(newEl);
         return;
     }
 
@@ -325,6 +348,7 @@ function diff(parent, oldVNode, newVNode) {
 
     if (oldVNode.tag !== newVNode.tag) {
         const newEl = render(newVNode, parent);
+        newVNode.DOM = newEl;
         parent.replaceChild(newEl, oldVNode.DOM || oldVNode._instance.dom);
         return;
     }
@@ -346,7 +370,7 @@ function diff(parent, oldVNode, newVNode) {
     }
 
     for (const key of newAttrs) {
-        if (key.startsWith("on") && typeof newVNode.attributes[key] === 'function') {
+        if (key === "value" || (key.startsWith("on") && typeof newVNode.attributes[key] === 'function')) {
             el[key] = newVNode.attributes[key];
         } else {
             el.setAttribute(key, newVNode.attributes[key]);
@@ -359,6 +383,7 @@ function diff(parent, oldVNode, newVNode) {
     const max = Math.max(oldChildren.length, newChildren.length);
 
     for (let i = 0; i < max; i++) {
+        if (!newChildren[i]) newChildren[i] = DOM.comment("empty");
         diff(el, oldChildren[i], newChildren[i]);
     }
 }

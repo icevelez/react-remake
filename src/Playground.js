@@ -1,9 +1,11 @@
-import { DOM, useState } from "../react.js";
+import { DOM, useContext, useState } from "../react.js";
 
-export default function () {
+import { Example } from "./Context.js";
+
+export default function (props) {
     console.log("render playground");
 
-    const [count, setCount] = useState(0);
+    const { count, setCount } = props;
     const [names, setNames] = useState(['ice', 'ian', 'takeru', 'piox']);
 
     function addName(event) {
@@ -15,11 +17,13 @@ export default function () {
         event.target.value = "";
     }
 
-    return DOM.div([
+    return DOM.div({ style: "border-style: solid; border-color: red;" }, [
         DOM.div([
             DOM.p("Counter: " + count),
             DOM.button("Click Me", {
-                onclick: () => setCount(count + 1)
+                onclick: () => {
+                    setCount(count + 1);
+                }
             }),
             DOM.br(),
             DOM.br(),
@@ -33,7 +37,7 @@ export default function () {
         ]),
         DOM.br(),
         DOM.div([
-            DOM.label("Change name of no.1 (" + names[0].toUpperCase() + ")"),
+            DOM.label("Change name of no.1 (" + names[0]?.toUpperCase() + ")"),
             DOM.input({
                 type: "text",
                 value: names[0],
@@ -55,6 +59,7 @@ export default function () {
                             return names;
                         })
                     }),
+                    DOM.span(" "),
                     DOM.input({
                         type: "text",
                         value: names[i],
