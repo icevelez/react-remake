@@ -1,4 +1,4 @@
-import { DOM, useState } from "../react.js";
+import { DOM, useMemo, useState } from "../react.js";
 
 import Counter from "./Counter.js";
 import Playground from "./Playground.js";
@@ -27,7 +27,7 @@ export default function () {
             })
         ]),
         showPlayground ? DOM.component(Playground, { count, setCount }) : null,
-        DOM.component(Counter, { id: "x app", count, setCount }),
-        DOM.component(TextBind, { message, setMessage, }),
+        useMemo(DOM.component(Counter, { id: "x app", count, setCount }), [count]),
+        useMemo(DOM.component(TextBind, { message, setMessage, }), [message]),
     ]);
 }

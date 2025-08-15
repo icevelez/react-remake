@@ -71,7 +71,7 @@ const RealDOM = new Proxy({}, {
 
 /** @typedef {(text:string | Record<string, any> | any[], attribute:Record<string, any> | any[], children:any[]) => vNode} vElement */
 /** @typedef {{ (import_url:string, fallback:(props:Record<string, any>) => vNode, props:Record<string, any>) => vNode, async : () => Promise<() => vNode>, [IS_ASYNC] : boolean }} vLazy */
-/** @typedef {(props:Record<string, any>) => vNode} vComponent */
+/** @typedef {(component:Function, props:Record<string, any>) => vNode} vComponent */
 /** @typedef {(context:Symbol, props:any, child:vNode) => vNode} vProvider */
 
 /** @type {{ [x:string] : vElement, lazy : vLazy, component : vComponent, provider : vProvider }} */
@@ -189,12 +189,17 @@ function runEffects() {
     useEffectQueue = [];
 }
 
+/**
+ * @template {any} T
+ * @param {T} initial_value
+ * @returns {[T, (new_value:T | (current_value:T) => T) => void]}
+ */
 export function useState(initial_value) {
     if (!currentInstance) throw new Error("cannot instantiate \"useState\" outside of a component");
 
     const instance = currentInstance;
     const index = useStateCounter;
-    if (!instance.stateStack[index]) {
+    if (instance.stateStack[index] === null || instance.stateStack[index] === undefined) {
         instance.stateStack[index] = initial_value;
     }
 
@@ -300,6 +305,8 @@ function render(vnode, target = null) {
 }
 
 function diff(parent, oldVNode, newVNode) {
+    if (oldVNode === newVNode) return;
+
     if (!oldVNode && !newVNode) {
         return;
     }

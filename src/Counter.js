@@ -1,7 +1,4 @@
-import { DOM, useState, useEffect, useContext } from "../react.js";
-import { Example } from "./Context.js";
-
-import TextBind from "./TextBind.js";
+import { DOM } from "../react.js";
 
 export default function (props) {
     console.log("render counter");
@@ -11,8 +8,10 @@ export default function (props) {
     return DOM.div({ style: "border-style: solid; border-color: yellow;" }, [
         DOM.h1("Prop " + props?.id),
         DOM.h1("Count " + count),
-        DOM.button({ onclick: () => setCount(count + 1) }, [
-            DOM.span("Click Me: " + count),
+        DOM.button({
+            onclick: () => setCount((c) => c + 1)
+        }, [
+            DOM.span("Click Me to change counter"),
         ]),
     ])
 }

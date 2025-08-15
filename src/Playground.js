@@ -1,6 +1,5 @@
-import { DOM, useContext, useState } from "../react.js";
-
-import { Example } from "./Context.js";
+import { DOM, useState, useEffect } from "../react.js";
+import Comp from "./Comp.js";
 
 export default function (props) {
     console.log("render playground");
@@ -16,6 +15,15 @@ export default function (props) {
         })
         event.target.value = "";
     }
+
+    // useEffect(() => {
+    //     setTimeout(() => {
+    //         setNames((names) => {
+    //             names.unshift("Bruh");
+    //             return names;
+    //         })
+    //     }, 10000)
+    // }, [])
 
     return DOM.div({ style: "border-style: solid; border-color: red;" }, [
         DOM.div([
@@ -51,24 +59,7 @@ export default function (props) {
             names.length <= 0 ? [
                 DOM.h1("Empty list")
             ] : names.map((name, i) => {
-                return DOM.div([
-                    DOM.h1(`${i + 1}. ${name.toUpperCase()}`),
-                    DOM.button("Delete", {
-                        onclick: () => setNames((names) => {
-                            names.splice(i, 1);
-                            return names;
-                        })
-                    }),
-                    DOM.span(" "),
-                    DOM.input({
-                        type: "text",
-                        value: names[i],
-                        oninput: (event) => setNames((names) => {
-                            names[i] = event.target.value;
-                            return names;
-                        })
-                    })
-                ])
+                return DOM.component(Comp, { name, setNames, i })
             })
         ),
         DOM.br(),
