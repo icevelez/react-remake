@@ -1,9 +1,10 @@
-import { DOM } from "../react.js";
+import { DOM, useContext } from "../react.js";
+import { Example } from "./Context.js";
 
 export default function (props) {
-    console.log("render counter");
+    console.log("exec counter");
 
-    const { count, setCount } = props;
+    const { count, setCount } = useContext(Example);
 
     return DOM.div({ style: "border-style: solid; border-color: yellow;" }, [
         DOM.h1("Prop " + props?.id),

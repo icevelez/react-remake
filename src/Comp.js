@@ -1,7 +1,7 @@
 import { DOM } from "../react.js";
 
 export default function (props) {
-    console.log("render comp");
+    console.log("exec comp");
 
     return DOM.div([
         DOM.h1(`${props.i + 1}. ${props.name.toUpperCase()}`),

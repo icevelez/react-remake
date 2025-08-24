@@ -1,10 +1,12 @@
-import { DOM, useState, useEffect } from "../react.js";
+import { DOM, useContext, useState, useEffect } from "../react.js";
+import { Example } from "./Context.js";
+
 import Comp from "./Comp.js";
 
 export default function (props) {
-    console.log("render playground");
+    console.log("exec playground");
 
-    const { count, setCount } = props;
+    const { count, setCount } = useContext(Example);
     const [names, setNames] = useState(['ice', 'ian', 'takeru', 'piox']);
 
     function addName(event) {
@@ -16,21 +18,11 @@ export default function (props) {
         event.target.value = "";
     }
 
-    // useEffect(() => {
-    //     setTimeout(() => {
-    //         setNames((names) => {
-    //             names.unshift("Bruh");
-    //             return names;
-    //         })
-    //     }, 10000)
-    // }, [])
-
     return DOM.div({ style: "border-style: solid; border-color: red;" }, [
         DOM.div([
-            DOM.p("Counter: " + count),
-            DOM.button("Click Me", {
+            DOM.button("Add to Counter", {
                 onclick: () => {
-                    setCount(count + 1);
+                    setCount((previous_count) => previous_count + 1);
                 }
             }),
             DOM.br(),

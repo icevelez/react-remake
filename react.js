@@ -1,3 +1,4 @@
+const dev = false; // enable or disable console.log
 const IS_VIRTUAL_ELEMENT = Symbol("is_virtual_element");
 const IS_ASYNC = Symbol("is_async");
 
@@ -72,9 +73,8 @@ const RealDOM = new Proxy({}, {
 /** @typedef {(text:string | Record<string, any> | any[], attribute:Record<string, any> | any[], children:any[]) => vNode} vElement */
 /** @typedef {{ (import_url:string, fallback:(props:Record<string, any>) => vNode, props:Record<string, any>) => vNode, async : () => Promise<() => vNode>, [IS_ASYNC] : boolean }} vLazy */
 /** @typedef {(component:Function, props:Record<string, any>) => vNode} vComponent */
-/** @typedef {(context:Symbol, props:any, child:vNode) => vNode} vProvider */
 
-/** @type {{ [x:string] : vElement, lazy : vLazy, component : vComponent, provider : vProvider }} */
+/** @type {{ [x:string] : vElement, lazy : vLazy, component : vComponent }} */
 export const DOM = new Proxy({}, {
     get(_, tag) {
         if (typeof tag !== 'string') throw new Error("tag is not a string");
@@ -136,9 +136,12 @@ export function createContext() {
         id: Symbol("context"),
         /**
          * @param {any} value
-         * @param {vNode} child
+         * @param {() => vNode} vnode_fn
          */
         Provider: function (value, child) {
+            if (typeof child === "object" && child[IS_VIRTUAL_ELEMENT]) throw new Error("child should be a callback that returns a vnode, not a vnode directly");
+            if (typeof child !== "function") throw new Error("child is not a function");
+
             return {
                 id: this,
                 tag: "provider",
@@ -298,6 +301,7 @@ function render(vnode, target = null) {
             return placeholder;
         }
 
+        if (dev) console.log("[react-remake.js]: render");
         return dom;
     }
 
@@ -305,13 +309,17 @@ function render(vnode, target = null) {
 }
 
 function diff(parent, oldVNode, newVNode) {
-    if (oldVNode === newVNode) return;
+    if (oldVNode === newVNode) {
+        if (dev) console.log("[react-remake.js]: skipping the same vnode");
+        return;
+    }
 
     if (!oldVNode && !newVNode) {
         return;
     }
 
     if ((newVNode && newVNode.tag === "provider") || (oldVNode && oldVNode.tag === "provider")) {
+        currentInstance.contexts.set(newVNode.id, newVNode.value);
         diff(parent, oldVNode.child, newVNode.child);
         return;
     }
@@ -344,11 +352,13 @@ function diff(parent, oldVNode, newVNode) {
     if (!oldVNode) {
         const newEl = render(newVNode, parent);
         newVNode.DOM = newEl;
+        if (dev) console.log("[react-remake.js]: append element");
         parent.append(newEl);
         return;
     }
 
     if (!newVNode) {
+        if (dev) console.log("[react-remake.js]: remove element");
         parent.removeChild(oldVNode.DOM || oldVNode._instance.dom);
         return;
     }
@@ -356,6 +366,7 @@ function diff(parent, oldVNode, newVNode) {
     if (oldVNode.tag !== newVNode.tag) {
         const newEl = render(newVNode, parent);
         newVNode.DOM = newEl;
+        if (dev) console.log("[react-remake.js]: replace element");
         parent.replaceChild(newEl, oldVNode.DOM || oldVNode._instance.dom);
         return;
     }
@@ -365,6 +376,7 @@ function diff(parent, oldVNode, newVNode) {
 
     // Update text content
     if (oldVNode.textContent !== newVNode.textContent) {
+        if (dev) console.log("[react-remake.js]: update text");
         el.textContent = newVNode.textContent || "";
     }
 
@@ -377,6 +389,7 @@ function diff(parent, oldVNode, newVNode) {
     }
 
     for (const key of newAttrs) {
+        if (dev) console.log("[react-remake.js]: set attribute:", key);
         if (key === "value" || (key.startsWith("on") && typeof newVNode.attributes[key] === 'function')) {
             el[key] = newVNode.attributes[key];
         } else {
